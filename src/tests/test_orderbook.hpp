@@ -10,3 +10,4 @@ void status_state_machine_test();
 void cancel_partial_fill_test();
 void global_invariant_test();
 void fee_tier_test();
+void market_data_test();

@@ -2,6 +2,7 @@
 #include "core/Order.hpp"
 
 #include <cassert>
+#include <iostream>
 
 namespace MatchEngine{
 
@@ -91,5 +92,50 @@ const PriceLevel* OrderBook::get_best_opposite(Side side) const{
     return bids.empty() ? nullptr : std::prev(bids.end())->second;
 }
 
+// returns best bid and ask price and quantity
+BBO OrderBook::get_bbo() const{
+    BBO bbo{};
+    if(best_bid){
+        bbo.has_bid=true;
+        bbo.bid_price=best_bid->price;
+        bbo.bid_quantity=best_bid->total_quantity;
+    }
+
+    if(best_ask){
+        bbo.has_ask=true;
+        bbo.ask_price=best_ask->price;
+        bbo.ask_quantity=best_ask->total_quantity;
+    }
+
+    return bbo;
+}
+
+// returns all price levels up to the specified depth on both sides
+L2Snapshot OrderBook::get_l2_snapshot(size_t depth) const{
+    L2Snapshot snap;
+
+    //Bids->descending order
+    size_t count=0;
+    for(auto it=bids.rbegin();it!=bids.rend();it++){
+        if(count==depth) break;
+        snap.bids.push_back({
+            it->second->price,
+            it->second->total_quantity
+        });
+        count++;
+    }
+
+    //Asks->ascending order
+    count=0;
+    for(auto it=asks.begin();it!=asks.end();it++){
+        if(count==depth) break;
+        snap.asks.push_back({
+            it->second->price,
+            it->second->total_quantity
+        });
+        count++;
+    }
+    return snap;
+}
 
 }// namespace MatchEngine

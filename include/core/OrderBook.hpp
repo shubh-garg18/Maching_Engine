@@ -13,7 +13,8 @@ Invariants:
 
 #include "Order.hpp"
 #include "PriceLevel.hpp"
-#include "utils/Types.hpp"
+#include "market_data/BBO.hpp"
+#include "market_data/L2Snapshot.hpp"
 #include<string>
 #include<map>
 #include<unordered_map>
@@ -61,8 +62,8 @@ struct OrderBook{
     bool can_fully_fill(const Order* order) const;
 
     // Snapshots and BBO calculation
-    // BBO get_bbo() const;
-    // L2Snapshot get_l2_snapshot(size_t depth)const;
+    BBO get_bbo() const;
+    L2Snapshot get_l2_snapshot(size_t depth)const;
 
 };
 

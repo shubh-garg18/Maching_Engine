@@ -2,6 +2,8 @@
 #include "core/OrderBook.hpp"
 #include "core/MatchingEngine.hpp"
 #include "FeeCalculator/FeeCalculator.hpp"
+#include "io/PrintBBO.hpp"
+#include "io/PrintL2Snapshot.hpp"
 
 #include <iostream>
 #include <cassert>
@@ -27,27 +29,13 @@ public:
     void run_cancel_partial_fill_test();
     void run_global_invariant_test();
     void run_fee_tier_test();
+    void run_market_data_test();
 
 
 private:
     OrderBook book;
     MatchingEngine engine;
     FeeCalculator fee_calculator;
-
-    // ---------- Helper utilities ----------
-    void print_bbo() const {
-        if (auto* bid = book.get_best_bid())
-            std::cout << "Best bid: " << bid->price << "\n";
-        else
-            std::cout << "Best bid: none\n";
-
-        if (auto* ask = book.get_best_ask())
-            std::cout << "Best ask: " << ask->price << "\n";
-        else
-            std::cout << "Best ask: none\n";
-
-        std::cout << "\n";
-    }
 };
 
 // ------------------ TEST 1 ------------------
@@ -64,7 +52,8 @@ void OrderBookTest::run_test1() {
     book.insert_limit(&b1);
 
     std::cout << "Initial BBO:\n";
-    print_bbo();
+    auto bbo = book.get_bbo();
+    std::cout << bbo;
 
     Order b2("B2", Side::BUY, OrderType::LIMIT, 101.0, 3, 4);
     engine.process_limit_order(&b2);
@@ -73,7 +62,8 @@ void OrderBookTest::run_test1() {
     assert(b2.is_filled());
 
     std::cout << "After BUY 3 @ 101:\n";
-    print_bbo();
+    bbo = book.get_bbo();
+    std::cout << bbo;
 
     Order b3("B3", Side::BUY, OrderType::LIMIT, 103.0, 6, 5);
     engine.process_limit_order(&b3);
@@ -82,12 +72,14 @@ void OrderBookTest::run_test1() {
     assert(s2.remaining_quantity() == 1);
 
     std::cout << "After BUY 6 @ 103:\n";
-    print_bbo();
+    bbo = book.get_bbo();
+    std::cout << bbo;
 
     book.cancel_order("B1");
 
     std::cout << "After cancel B1:\n";
-    print_bbo();
+    bbo = book.get_bbo();
+    std::cout << bbo;
     std::cout<<"\n TEST CASE PASSED\n\n\n\n";
 }
 
@@ -105,7 +97,8 @@ void OrderBookTest::run_test2() {
     book.insert_limit(&o3);
 
     std::cout << "Initial BBO:\n";
-    print_bbo();
+    auto bbo = book.get_bbo();
+    std::cout << bbo;
 
     Order o4("O4", Side::BUY, OrderType::LIMIT, 103.0, 8, 4);
     engine.process_limit_order(&o4);
@@ -114,7 +107,8 @@ void OrderBookTest::run_test2() {
     assert(o4.remaining_quantity() == 0);
 
     std::cout << "After BUY 8 @ 103:\n";
-    print_bbo();
+    bbo = book.get_bbo();
+    std::cout << bbo;
     std::cout<<"\n TEST CASE PASSED\n\n\n\n";
 }
 
@@ -132,7 +126,8 @@ void OrderBookTest::run_limit_order_test() {
     book.insert_limit(&o3);
 
     std::cout << "Initial BBO:\n";
-    print_bbo();
+    auto bbo = book.get_bbo();
+    std::cout << bbo;
 
     Order o4("O4", Side::BUY, OrderType::LIMIT, 103.0, 8, 4);
     engine.process_order(&o4);
@@ -170,7 +165,8 @@ void OrderBookTest::run_market_order_test() {
     book.insert_limit(&s3);
 
     std::cout << "Initial BBO:\n";
-    print_bbo();
+    auto bbo = book.get_bbo();
+    std::cout << bbo;
 
     // Market BUY for more than total ask liquidity (2+3+5 = 10)
     Order m1("M1", Side::BUY, OrderType::MARKET, 12, 4);
@@ -204,7 +200,8 @@ void OrderBookTest::run_market_order_test() {
     assert(engine.trades[2].quantity == 5);
 
     std::cout << "After MARKET BUY 12:\n";
-    print_bbo();
+    bbo = book.get_bbo();
+    std::cout << bbo;
 
     std::cout<<"Number of Trades:"<<engine.trades.size()<<"\n";
 
@@ -233,7 +230,8 @@ void OrderBookTest::run_ioc_order_test() {
     book.insert_limit(&s2);
 
     std::cout<<"Initial BBO:\n";
-    print_bbo();
+    auto bbo = book.get_bbo();
+    std::cout << bbo;
 
     Order ioc("IOC1",Side::BUY,OrderType::IOC,102.0,10,3);
     engine.process_order(&ioc);
@@ -256,7 +254,8 @@ void OrderBookTest::run_ioc_order_test() {
     assert(engine.trades[0].quantity == 3);
 
     std::cout<<"After IOC BUY 10 @ 102:\n";
-    print_bbo();
+    bbo = book.get_bbo();
+    std::cout << bbo;
 
     std::cout<<"Number of Trades:"<<engine.trades.size()<<"\n";
 
@@ -284,7 +283,8 @@ void OrderBookTest::run_fok_order_test() {
     book.insert_limit(&s2);
 
     std::cout << "Initial BBO:\n";
-    print_bbo();
+    auto bbo = book.get_bbo();
+    std::cout << bbo;
 
     Order fok("FOK1", Side::BUY, OrderType::FOK, 103.0, 6, 3);
     engine.process_order(&fok);
@@ -303,7 +303,8 @@ void OrderBookTest::run_fok_order_test() {
     assert(fok.status == OrderStatus::CANCELLED);
 
     std::cout << "After FOK BUY 6 @ 103:\n";
-    print_bbo();
+    bbo = book.get_bbo();
+    std::cout << bbo;
 
     std::cout<<"Number of Trades:"<<engine.trades.size()<<"\n";
 
@@ -440,6 +441,41 @@ void OrderBookTest::run_fee_tier_test() {
     std::cout<<"\n TEST CASE PASSED\n\n\n\n";
 }
 
+// ------------------ MARKET DATA TEST ------------------
+
+void OrderBookTest::run_market_data_test() {
+    std::cout << "=== MARKET DATA TEST ===\n";
+
+    Order b1("B1", Side::BUY,  OrderType::LIMIT, 99.0, 5, 1);
+    Order b2("B2", Side::BUY,  OrderType::LIMIT, 98.0, 3, 2);
+    Order s1("S1", Side::SELL, OrderType::LIMIT, 101.0, 4, 3);
+    Order s2("S2", Side::SELL, OrderType::LIMIT, 102.0, 6, 4);
+
+    book.insert_limit(&b1);
+    book.insert_limit(&b2);
+    book.insert_limit(&s1);
+    book.insert_limit(&s2);
+
+    BBO bbo = book.get_bbo();
+    assert(bbo.has_bid && bbo.bid_price == 99.0 && bbo.bid_quantity == 5);
+    assert(bbo.has_ask && bbo.ask_price == 101.0 && bbo.ask_quantity == 4);
+
+    L2Snapshot snap = book.get_l2_snapshot(2);
+    assert(snap.bids.size() == 2);
+    assert(snap.asks.size() == 2);
+
+    assert(snap.bids[0].price == 99.0);
+    assert(snap.bids[1].price == 98.0);
+
+    assert(snap.asks[0].price == 101.0);
+    assert(snap.asks[1].price == 102.0);
+
+    std::cout << bbo;
+    std::cout << snap;
+
+    std::cout<<"\n TEST CASE PASSED\n\n\n\n";
+}
+
 
 // ------------------ PUBLIC ENTRY POINTS ------------------
 
@@ -493,3 +529,7 @@ void fee_tier_test() {
     test.run_fee_tier_test();
 }
 
+void market_data_test() {
+    OrderBookTest test;
+    test.run_market_data_test();
+}
