@@ -19,7 +19,7 @@ Commands to run
 $ g++ -std=c++17 -g -Wall -Wextra -Wshadow -Wconversion -Wpedantic \
 -Iinclude \
 $(find src -name '*.cpp') \
--o test_engine_dbg
+-o test_engine
 
 
 
