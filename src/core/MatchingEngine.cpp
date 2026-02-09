@@ -2,6 +2,7 @@
 #include "core/OrderBook.hpp"
 #include "FeeCalculator/FeeCalculator.hpp"
 
+
 #include<cassert>
 
 namespace MatchEngine{
@@ -36,7 +37,24 @@ Trade MatchingEngine::generate_trades(uint64_t trade_qty, Order* incoming, Order
 
     t.maker_fee=fees_calculator.maker_fee(resting->order_id, t.price, trade_qty);
     t.taker_fee=fees_calculator.taker_fee(incoming->order_id,t.price, trade_qty);
+
     assert(t.taker_fee>=0 || t.maker_fee<=0);
+
+    //Publish Trade by TradePublisher
+    if(trade_publisher){
+        TradeEvent ev{
+            t.user_id,
+            t.buy_order_id,
+            t.sell_order_id,
+            t.price,
+            t.quantity,
+            t.timestamp,
+            t.maker_fee,
+            t.taker_fee
+        };
+        trade_publisher->publish(ev);
+    }
+
     return t;
 }
 

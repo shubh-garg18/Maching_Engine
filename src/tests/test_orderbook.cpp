@@ -4,6 +4,7 @@
 #include "FeeCalculator/FeeCalculator.hpp"
 #include "io/PrintBBO.hpp"
 #include "io/PrintL2Snapshot.hpp"
+#include "../publisher/TradePublisher.cpp"
 
 #include <iostream>
 #include <cassert>
@@ -30,6 +31,7 @@ public:
     void run_global_invariant_test();
     void run_fee_tier_test();
     void run_market_data_test();
+    void run_trade_stream_test();
 
 
 private:
@@ -476,6 +478,35 @@ void OrderBookTest::run_market_data_test() {
     std::cout<<"\n TEST CASE PASSED\n\n\n\n";
 }
 
+// ------------------ TRADE STREAM TEST ------------------
+
+void OrderBookTest::run_trade_stream_test() {
+    std::cout << "=== TRADE STREAM TEST ===\n";
+
+    InMemoryTradePublisher publisher;
+    engine.set_trade_publisher(&publisher);
+
+    Order s1("S1", Side::SELL, OrderType::LIMIT, 100.0, 5, 1);
+    book.insert_limit(&s1);
+
+    Order b1("B1", Side::BUY, OrderType::MARKET, 5, 2);
+    engine.process_market_order(&b1);
+
+    assert(publisher.events.size() == 1);
+
+    const TradeEvent& ev = publisher.events[0];
+    assert(ev.price == 100.0);
+    assert(ev.quantity == 5);
+    assert(ev.buy_order_id == "B1");
+    assert(ev.sell_order_id == "S1");
+
+    std::cout << "Trade published at price "
+              << ev.price << " qty "
+              << ev.quantity << "\n";
+
+    std::cout<<"\n TEST CASE PASSED\n\n\n\n";
+}
+
 
 // ------------------ PUBLIC ENTRY POINTS ------------------
 
@@ -532,4 +563,9 @@ void fee_tier_test() {
 void market_data_test() {
     OrderBookTest test;
     test.run_market_data_test();
+}
+
+void trade_stream_test() {
+    OrderBookTest test;
+    test.run_trade_stream_test();
 }

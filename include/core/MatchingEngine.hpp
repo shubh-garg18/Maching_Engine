@@ -9,6 +9,7 @@ Invariants:
 
 #include "OrderBook.hpp"
 #include "FeeCalculator/FeeCalculator.hpp"
+#include "publisher/TradePublisher.hpp"
 #include<string>
 #include<vector>
 #include<cstdint>
@@ -41,6 +42,13 @@ struct MatchingEngine{
     FeeCalculator& fees_calculator;
 
     std::vector<Trade> trades;
+
+    //Trade Publisher
+    TradePublisher* trade_publisher=nullptr;
+    void set_trade_publisher(TradePublisher* p){
+        trade_publisher=p;
+    }
+
     uint64_t last_timestamp=0;
     explicit MatchingEngine(OrderBook& book, FeeCalculator& fee_calculator);
 

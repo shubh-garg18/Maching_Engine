@@ -11,13 +11,14 @@ int main() {
     global_invariant_test();
     fee_tier_test();*/
     market_data_test();
+    trade_stream_test();
 
     return 0;
 }
 
 /*
 
-g++ -std=c++17 -g -Wall -Wextra -Wshadow -Wconversion -Wpedantic \
+g++ -std=c++20 -g -Wall -Wextra -Wshadow -Wconversion -Wpedantic \
 -Iinclude \
 $(find src -name '*.cpp') \
 -o test_engine
