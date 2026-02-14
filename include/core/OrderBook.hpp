@@ -32,6 +32,9 @@ struct OrderBook{
     //Order lookup
     std::unordered_map<std::string,Order*> orders;
 
+    //Stop loss orders
+    std::vector<Order*> pending_stops;
+    
     //Constructor
     OrderBook()
         : best_bid(nullptr), best_ask(nullptr) {}

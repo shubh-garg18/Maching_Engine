@@ -1,9 +1,8 @@
 #include "core/MatchingEngine.hpp"
-#include "core/OrderBook.hpp"
-#include "FeeCalculator/FeeCalculator.hpp"
-
 
 #include<cassert>
+#include<algorithm>
+#include<cmath>
 
 namespace MatchEngine{
 
@@ -38,7 +37,9 @@ Trade MatchingEngine::generate_trades(uint64_t trade_qty, Order* incoming, Order
     t.maker_fee=fees_calculator.maker_fee(resting->order_id, t.price, trade_qty);
     t.taker_fee=fees_calculator.taker_fee(incoming->order_id,t.price, trade_qty);
 
-    assert(t.taker_fee>=0 || t.maker_fee<=0);
+    assert(t.taker_fee >= 0);
+    assert(!std::isnan(t.maker_fee));
+    assert(!std::isnan(t.taker_fee));
 
     //Publish Trade by TradePublisher
     if(trade_publisher){
@@ -74,12 +75,17 @@ void MatchingEngine::process_order(Order* order){
         case OrderType::FOK: 
             process_fok_order(order); 
             break;
+        case OrderType::STOP_LOSS:
+        case OrderType::STOP_LIMIT:
+            process_stop_order(order);
+            break;
     }
 }
 
 // Matching Loop common for any type of order
 void MatchingEngine::matching_loop(Order* order){
     Side side=order->side;
+    bool any_trade=false;
 
     while(order->remaining_quantity()>0){
         PriceLevel* level=order_book.get_best_opposite(side);
@@ -102,6 +108,8 @@ void MatchingEngine::matching_loop(Order* order){
 
         Trade t=generate_trades(trade_qty, order, resting);
         trades.push_back(t);
+        last_trade_price=t.price;
+        any_trade=true;
 
         assert(t.quantity > 0);
         assert(t.price == resting->price);
@@ -118,6 +126,7 @@ void MatchingEngine::matching_loop(Order* order){
             resting->status=OrderStatus::PARTIALLY_FILLED;
         }
     }
+    if(any_trade) check_stop_orders();
 }
 
 // Insert for limit order
@@ -169,7 +178,7 @@ void MatchingEngine::process_ioc_order(Order* order){
 
     matching_loop(order);
     if(!order->filled_quantity){
-        order->status=OrderStatus::CANCELLED;
+        order->status=OrderStatus::CANCELLED;// Documented in README 0 liquidity becomes CANCELLED
     }
     else if(order->remaining_quantity()){
         order->status=OrderStatus::PARTIALLY_FILLED;
@@ -216,6 +225,53 @@ bool MatchingEngine::cross(const Order* order, const PriceLevel* level){
             (side == Side::SELL && order->price <= level->price);
     
    return crosses;
+}
+
+// Insert for stop loss orders
+void MatchingEngine::process_stop_order(Order* order){
+    assert(order);
+    assert(order->type == OrderType::STOP_LOSS || order->type == OrderType::STOP_LIMIT);
+
+    order_book.pending_stops.push_back(order);
+    order->status=OrderStatus::OPEN;
+}
+
+// Check stop loss orders after every trade O(S) with vector, O(log S) with map
+void MatchingEngine::check_stop_orders(){
+    std::vector<Order*> triggered;
+
+    for(auto* order: order_book.pending_stops){
+        if(order->is_triggered) continue;
+
+        bool should_trigger=false;
+
+        if(order->side==Side::BUY) should_trigger = last_trade_price>=order->stop_price;
+        else should_trigger = last_trade_price<=order->stop_price;
+        
+        if(should_trigger){
+            order->is_triggered=true;
+            triggered.push_back(order);
+        }
+    }
+
+    for(auto* order: triggered){
+        order_book.pending_stops.erase(
+            std::remove(order_book.pending_stops.begin(),
+                        order_book.pending_stops.end(),
+                        order),
+            order_book.pending_stops.end()
+        );
+
+        if(order->type==OrderType::STOP_LOSS){
+            order->type=OrderType::MARKET;
+            process_market_order(order);
+        }
+
+        else{
+            order->type=OrderType::LIMIT;
+            process_limit_order(order);
+        }
+    }
 }
 
 }// namespace MatchEngine

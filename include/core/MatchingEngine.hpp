@@ -41,6 +41,9 @@ struct MatchingEngine{
     OrderBook& order_book;
     FeeCalculator& fees_calculator;
 
+    // Last traded price for stop loss triggering
+    double last_trade_price=0.0;
+
     std::vector<Trade> trades;
 
     //Trade Publisher
@@ -66,6 +69,11 @@ struct MatchingEngine{
 
     // Helper function 
     static bool cross(const Order* order, const PriceLevel* level);
+
+    // Stop loss orders
+    void process_stop_order(Order* order);
+    void check_stop_orders();
+
 
 private:
     Trade generate_trades(uint64_t trade_qty, Order* incoming, Order* resting);

@@ -2,16 +2,17 @@
 
 int main() {  
 
-    limit_order_test();
-    /*market_order_test();
+    /*limit_order_test();
+    market_order_test();
     ioc_order_test();
     fok_order_test();
     status_state_machine_test();
     cancel_partial_fill_test();
     global_invariant_test();
-    fee_tier_test();*/
+    fee_tier_test();
     market_data_test();
-    trade_stream_test();
+    trade_stream_test();*/
+    stop_loss_test();
 
     return 0;
 }

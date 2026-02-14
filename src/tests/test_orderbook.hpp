@@ -12,3 +12,4 @@ void global_invariant_test();
 void fee_tier_test();
 void market_data_test();
 void trade_stream_test();
+void stop_loss_test();

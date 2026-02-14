@@ -14,7 +14,9 @@ enum class OrderType:uint8_t{
     LIMIT,
     MARKET,
     IOC,
-    FOK
+    FOK,
+    STOP_LOSS,
+    STOP_LIMIT
 };
     
 enum class OrderStatus:uint8_t{

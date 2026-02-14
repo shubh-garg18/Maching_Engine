@@ -32,6 +32,7 @@ public:
     void run_fee_tier_test();
     void run_market_data_test();
     void run_trade_stream_test();
+    void run_stop_loss_test();
 
 
 private:
@@ -507,6 +508,98 @@ void OrderBookTest::run_trade_stream_test() {
     std::cout<<"\n TEST CASE PASSED\n\n\n\n";
 }
 
+// ------------------ STOP LOSS TEST ------------------
+
+void OrderBookTest::run_stop_loss_test() {
+    std::cout << "=== STOP ORDERS EDGE CASE TESTS ===\n";
+
+    // ------------------ Setup Liquidity ------------------
+    Order s1("S1", Side::SELL, OrderType::LIMIT, 100.0, 5, 1);
+    Order s2("S2", Side::SELL, OrderType::LIMIT, 101.0, 5, 2);
+    Order s3("S3", Side::SELL, OrderType::LIMIT, 102.0, 5, 3);
+
+    book.insert_limit(&s1);
+    book.insert_limit(&s2);
+    book.insert_limit(&s3);
+
+    // ------------------ 1️⃣ Multiple stops triggered at same price (FIFO) ------------------
+    Order stop1("STOP1", Side::BUY, OrderType::STOP_LOSS, 0.0, 2, 4);
+    stop1.stop_price = 100.0;
+
+    Order stop2("STOP2", Side::BUY, OrderType::STOP_LOSS, 0.0, 2, 5);
+    stop2.stop_price = 100.0;
+
+    engine.process_stop_order(&stop1);
+    engine.process_stop_order(&stop2);
+
+    Order b1("B1", Side::BUY, OrderType::MARKET, 5, 6);
+    engine.process_market_order(&b1);
+
+    assert(stop1.is_triggered);
+    assert(stop2.is_triggered);
+
+    // FIFO guarantee: stop1 executes before stop2
+    assert(engine.trades[1].buy_order_id == "STOP1");
+    assert(engine.trades[2].buy_order_id == "STOP2");
+
+    std::cout << "✔ FIFO triggering passed\n";
+
+    // ------------------ 2️⃣ Stop-limit may not fully fill ------------------
+    Order stop_limit("STOP_LIMIT1", Side::BUY, OrderType::STOP_LIMIT, 101.0, 10, 7);
+    stop_limit.stop_price = 101.0;
+
+    engine.process_stop_order(&stop_limit);
+
+    Order b2("B2", Side::BUY, OrderType::MARKET, 5, 8);
+    engine.process_market_order(&b2);
+
+    assert(stop_limit.is_triggered);
+    assert(stop_limit.status == OrderStatus::PARTIALLY_FILLED ||
+           stop_limit.status == OrderStatus::OPEN);
+
+    std::cout << "✔ Stop-limit partial fill behavior passed\n";
+
+    // ------------------ 3️⃣ Stop triggers cascade (no infinite recursion) ------------------
+    Order stop3("STOP3", Side::BUY, OrderType::STOP_LOSS, 0.0, 1, 9);
+    stop3.stop_price = 101.0;
+
+    Order stop4("STOP4", Side::BUY, OrderType::STOP_LOSS, 0.0, 1, 10);
+    stop4.stop_price = 102.0;
+
+    engine.process_stop_order(&stop3);
+    engine.process_stop_order(&stop4);
+
+    Order b3("B3", Side::BUY, OrderType::MARKET, 10, 11);
+    engine.process_market_order(&b3);
+
+    assert(stop3.is_triggered);
+    assert(stop4.is_triggered);
+
+    std::cout << "✔ Cascading stop triggers passed\n";
+
+    // ------------------ 4️⃣ Triggering must not skip other stops ------------------
+    Order s10("S10", Side::SELL, OrderType::LIMIT, 101.0, 5, 100);
+    book.insert_limit(&s10);
+    
+    Order stop5("STOP5", Side::BUY, OrderType::STOP_LOSS, 0.0, 1, 12);
+    stop5.stop_price = 101.0;
+
+    Order stop6("STOP6", Side::BUY, OrderType::STOP_LOSS, 0.0, 1, 13);
+    stop6.stop_price = 101.0;
+
+    engine.process_stop_order(&stop5);
+    engine.process_stop_order(&stop6);
+
+    Order b4("B4", Side::BUY, OrderType::MARKET, 5, 14);
+    engine.process_market_order(&b4);
+
+    assert(stop5.is_triggered);
+    assert(stop6.is_triggered);
+
+    std::cout << "✔ No stop-skipping passed\n";
+
+    std::cout << "\nALL STOP ORDER EDGE CASES PASSED ✅\n\n";
+}
 
 // ------------------ PUBLIC ENTRY POINTS ------------------
 
@@ -568,4 +661,9 @@ void market_data_test() {
 void trade_stream_test() {
     OrderBookTest test;
     test.run_trade_stream_test();
+}
+
+void stop_loss_test() {
+    OrderBookTest test;
+    test.run_stop_loss_test();
 }

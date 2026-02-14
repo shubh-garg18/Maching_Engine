@@ -35,6 +35,10 @@ struct Order{
     uint64_t timestamp=0;
     OrderStatus status=OrderStatus::CREATED;
 
+    //Stop loss
+    double stop_price=0.0;
+    bool is_triggered=false;
+
     // Core Constructor
     Order(std::string uid, std::string id, Side s, OrderType t,
           double p, uint64_t qty, uint64_t ts)
@@ -42,7 +46,7 @@ struct Order{
           side(s), type(t), price(p),
           original_quantity(qty), timestamp(ts) {
               assert(qty>0);
-              if(type!=OrderType::MARKET) assert(price>0.0);
+              if(type!=OrderType::MARKET) assert(price>=0.0);
           }
 
     // No user ID
