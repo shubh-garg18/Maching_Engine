@@ -1,8 +1,9 @@
 #include "tests/test_orderbook.hpp"
+#include<iostream>
 
 int main() {  
 
-    /*limit_order_test();
+    limit_order_test();
     market_order_test();
     ioc_order_test();
     fok_order_test();
@@ -11,8 +12,12 @@ int main() {
     global_invariant_test();
     fee_tier_test();
     market_data_test();
-    trade_stream_test();*/
+    trade_stream_test();
     stop_loss_test();
+    timestamp_test();
+    order_timestamp_test();
+
+    std::cout << "All tests passed" << std::endl;
 
     return 0;
 }

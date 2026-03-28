@@ -13,7 +13,9 @@ Invariants:
 #define ORDER_HPP // Order.hpp
 
 #include "utils/Types.hpp"
+#include "utils/TimeUtils.hpp"
 #include<string>
+#include<utility>
 #include<cstdint>
 #include<cassert>
 
@@ -32,7 +34,8 @@ struct Order{
     Order* next=nullptr;
     Order* prev=nullptr;
     PriceLevel* price_level=nullptr;
-    uint64_t timestamp=0;
+    const TimeUtils::Timestamp timestamp_ns;
+    const TimeUtils::Timestamp wall_timestamp_ns;
     OrderStatus status=OrderStatus::CREATED;
 
     //Stop loss
@@ -41,21 +44,40 @@ struct Order{
 
     // Core Constructor
     Order(std::string uid, std::string id, Side s, OrderType t,
-          double p, uint64_t qty, uint64_t ts)
+          double p, uint64_t qty, double stop_p, const TimeUtils::Timestamp& tstamp)
         : user_id(std::move(uid)), order_id(std::move(id)),
           side(s), type(t), price(p),
-          original_quantity(qty), timestamp(ts) {
+          original_quantity(qty), timestamp_ns(tstamp),
+          wall_timestamp_ns(TimeUtils::wall_time_ns()), 
+          status(OrderStatus::CREATED), stop_price(stop_p) {
               assert(qty>0);
-              if(type!=OrderType::MARKET) assert(price>=0.0);
+              if (type == OrderType::LIMIT) assert(price > 0.0);
+              if (type == OrderType::STOP_LOSS || type == OrderType::STOP_LIMIT) assert(stop_price > 0.0);
+              if (type == OrderType::STOP_LIMIT) assert(price > 0.0);                
           }
 
     // No user ID
-    Order(std::string id, Side s, OrderType t, double p, uint64_t qty, uint64_t ts)
-        : Order("Shubh", std::move(id), s, t, p, qty, ts) {}
+    Order(std::string id, Side s, OrderType t, double p, uint64_t qty,
+          const TimeUtils::Timestamp& tstamp)
+        : Order("Shubh", std::move(id), s, t, p, qty, 0.0, tstamp) {}
 
     // Market order
-    Order(std::string id, Side s, OrderType t, uint64_t qty, uint64_t ts)
-        : Order("Shubh", std::move(id), s, t, 0.0, qty, ts) {}
+    Order(std::string id, Side s, OrderType t, uint64_t qty,
+          const TimeUtils::Timestamp& tstamp)
+        : Order("Shubh", std::move(id), s, t, 0.0, qty, 0.0, tstamp) {}
+
+    // Limit order with user_id (no stop)
+    Order(std::string uid, std::string id, Side s, OrderType t,
+        double p, uint64_t qty, const TimeUtils::Timestamp& tstamp)
+        : Order(std::move(uid), std::move(id), s, t,
+                p, qty, 0.0, tstamp) {}
+    
+    // Stop order (no user_id)
+    Order(std::string id, Side s, OrderType t,
+        double p, uint64_t qty, double stop_p,
+        const TimeUtils::Timestamp& tstamp)
+        : Order("Shubh", std::move(id), s, t, p, qty, stop_p, tstamp) {}
+
 
     uint64_t remaining_quantity() const{
         return original_quantity-filled_quantity;
@@ -65,6 +87,8 @@ struct Order{
     void fill_quantity(uint64_t qty) {
         assert(qty<=remaining_quantity());
         filled_quantity+=qty;
+        if(remaining_quantity()==0) status=OrderStatus::COMPLETED;
+        else status=OrderStatus::PARTIALLY_FILLED;
     }
 
 

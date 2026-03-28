@@ -8,6 +8,7 @@
 
 #include <iostream>
 #include <cassert>
+#include <unordered_set>
 
 using namespace MatchEngine;
 
@@ -33,7 +34,8 @@ public:
     void run_market_data_test();
     void run_trade_stream_test();
     void run_stop_loss_test();
-
+    void run_timestamp_test();
+    void run_order_timestamp_test();
 
 private:
     OrderBook book;
@@ -148,7 +150,7 @@ void OrderBookTest::run_limit_order_test() {
 
     if(engine.trades.size()) std::cout << "Trades:\n";
     for (auto& trade : engine.trades) {
-        std::cout << trade.user_id << " "<<trade.buy_order_id << " " << trade.sell_order_id << " " << trade.price << " " << trade.quantity << " " << trade.timestamp << "\n";
+        std::cout << trade.user_id << " "<<trade.buy_order_id << " " << trade.sell_order_id << " " << trade.price << " " << trade.quantity << " " << trade.engine_ts << "\n";
     }
     std::cout<<"\n TEST CASE PASSED\n\n\n\n";
 }
@@ -215,7 +217,7 @@ void OrderBookTest::run_market_order_test() {
                   << t.sell_order_id << " "
                   << t.price << " "
                   << t.quantity << " "
-                  << t.timestamp << "\n";
+                  << t.engine_ts << "\n";
     }
 
     std::cout<<"\n TEST CASE PASSED\n\n\n\n";
@@ -269,7 +271,7 @@ void OrderBookTest::run_ioc_order_test() {
                   << t.sell_order_id << " "
                   << t.price << " "
                   << t.quantity << " "
-                  << t.timestamp << "\n";
+                  << t.engine_ts << "\n";
     }
     std::cout<<"\n TEST CASE PASSED\n\n\n\n";
 }
@@ -318,7 +320,7 @@ void OrderBookTest::run_fok_order_test() {
                   << t.sell_order_id << " "
                   << t.price << " "
                   << t.quantity << " "
-                  << t.timestamp << "\n";
+                  << t.engine_ts << "\n";
     }
     std::cout<<"\n TEST CASE PASSED\n\n\n\n";
 }
@@ -403,7 +405,7 @@ void OrderBookTest::run_global_invariant_test() {
                   << tr.sell_order_id << " "
                   << tr.price << " "
                   << tr.quantity << " "
-                  << tr.timestamp << "\n";
+                  << tr.engine_ts << "\n";
     }
 
     std::cout<<"\n TEST CASE PASSED\n\n\n\n";
@@ -431,7 +433,7 @@ void OrderBookTest::run_fee_tier_test() {
                   << tr.sell_order_id << " "
                   << tr.price << " "
                   << tr.quantity << " "
-                  << tr.timestamp << "\n";
+                  << tr.engine_ts << "\n";
     }
 
     // notional = 200,000 → Tier 1
@@ -523,11 +525,9 @@ void OrderBookTest::run_stop_loss_test() {
     book.insert_limit(&s3);
 
     // ------------------ 1️⃣ Multiple stops triggered at same price (FIFO) ------------------
-    Order stop1("STOP1", Side::BUY, OrderType::STOP_LOSS, 0.0, 2, 4);
-    stop1.stop_price = 100.0;
+    Order stop1("STOP1", Side::BUY, OrderType::STOP_LOSS, 0.0, 2, 100.0, 4);
 
-    Order stop2("STOP2", Side::BUY, OrderType::STOP_LOSS, 0.0, 2, 5);
-    stop2.stop_price = 100.0;
+    Order stop2("STOP2", Side::BUY, OrderType::STOP_LOSS, 0.0, 2, 100.0, 5);
 
     engine.process_stop_order(&stop1);
     engine.process_stop_order(&stop2);
@@ -545,8 +545,7 @@ void OrderBookTest::run_stop_loss_test() {
     std::cout << "✔ FIFO triggering passed\n";
 
     // ------------------ 2️⃣ Stop-limit may not fully fill ------------------
-    Order stop_limit("STOP_LIMIT1", Side::BUY, OrderType::STOP_LIMIT, 101.0, 10, 7);
-    stop_limit.stop_price = 101.0;
+    Order stop_limit("STOP_LIMIT1", Side::BUY, OrderType::STOP_LIMIT, 101.0, 10, 101.0, 7);
 
     engine.process_stop_order(&stop_limit);
 
@@ -560,11 +559,9 @@ void OrderBookTest::run_stop_loss_test() {
     std::cout << "✔ Stop-limit partial fill behavior passed\n";
 
     // ------------------ 3️⃣ Stop triggers cascade (no infinite recursion) ------------------
-    Order stop3("STOP3", Side::BUY, OrderType::STOP_LOSS, 0.0, 1, 9);
-    stop3.stop_price = 101.0;
+    Order stop3("STOP3", Side::BUY, OrderType::STOP_LOSS, 0.0, 1, 101.0, 9);
 
-    Order stop4("STOP4", Side::BUY, OrderType::STOP_LOSS, 0.0, 1, 10);
-    stop4.stop_price = 102.0;
+    Order stop4("STOP4", Side::BUY, OrderType::STOP_LOSS, 0.0, 1, 102.0, 10);
 
     engine.process_stop_order(&stop3);
     engine.process_stop_order(&stop4);
@@ -581,11 +578,9 @@ void OrderBookTest::run_stop_loss_test() {
     Order s10("S10", Side::SELL, OrderType::LIMIT, 101.0, 5, 100);
     book.insert_limit(&s10);
     
-    Order stop5("STOP5", Side::BUY, OrderType::STOP_LOSS, 0.0, 1, 12);
-    stop5.stop_price = 101.0;
+    Order stop5("STOP5", Side::BUY, OrderType::STOP_LOSS, 0.0, 1, 101.0, 12);
 
-    Order stop6("STOP6", Side::BUY, OrderType::STOP_LOSS, 0.0, 1, 13);
-    stop6.stop_price = 101.0;
+    Order stop6("STOP6", Side::BUY, OrderType::STOP_LOSS, 0.0, 1, 101.0, 13);
 
     engine.process_stop_order(&stop5);
     engine.process_stop_order(&stop6);
@@ -598,8 +593,70 @@ void OrderBookTest::run_stop_loss_test() {
 
     std::cout << "✔ No stop-skipping passed\n";
 
-    std::cout << "\nALL STOP ORDER EDGE CASES PASSED ✅\n\n";
+    std::cout << "\nALL STOP ORDER EDGE CASES PASSED ✅\n\n\n\n";
 }
+
+// ------------------ TIMESTAMP TEST ------------------
+
+void OrderBookTest::run_timestamp_test() {
+    std::cout << "=== TIMESTAMP TEST ===\n";
+
+    using namespace MatchEngine::TimeUtils;
+
+    const int N = 100000;
+
+    Timestamp prev = now_ns();
+
+    for (int i = 0; i < N; i++) {
+        Timestamp curr = now_ns();
+
+        // 1. Monotonicity
+        assert(curr > prev);
+
+        prev = curr;
+    }
+
+    std::cout << "✔ Monotonicity passed\n";
+
+    // 2. Uniqueness
+    std::unordered_set<Timestamp> seen;
+    for (int i = 0; i < N; i++) {
+        auto t = now_ns();
+        assert(seen.insert(t).second);
+    }
+
+    std::cout << "✔ Uniqueness passed\n";
+
+    // 3. Wall clock validity
+    auto wall = wall_time_ns();
+    std::string iso = to_iso8601(wall);
+
+    std::cout << "Wall time ISO: " << iso << "\n";
+
+    assert(!iso.empty());
+    assert(iso.back() == 'Z');
+
+    std::cout << "✔ ISO conversion passed\n";
+
+    std::cout << "\n TIMESTAMP TEST PASSED ✅\n\n\n\n";
+}
+
+// ------------------ ORDER TIMESTAMP TEST ------------------
+
+void OrderBookTest::run_order_timestamp_test() {
+    std::cout << "=== ORDER TIMESTAMP TEST ===\n";
+
+    Order o1("O1", Side::BUY, OrderType::LIMIT, 100.0, 1, TimeUtils::now_ns());
+    Order o2("O2", Side::BUY, OrderType::LIMIT, 100.0, 1, TimeUtils::now_ns());
+
+    assert(o2.timestamp_ns > o1.timestamp_ns);
+
+    std::cout << "Order1 ts: " << o1.timestamp_ns << "\n";
+    std::cout << "Order2 ts: " << o2.timestamp_ns << "\n";
+
+    std::cout << "✔ FIFO timestamp ordering works\n\n\n\n";
+}
+
 
 // ------------------ PUBLIC ENTRY POINTS ------------------
 
@@ -666,4 +723,14 @@ void trade_stream_test() {
 void stop_loss_test() {
     OrderBookTest test;
     test.run_stop_loss_test();
+}
+
+void timestamp_test() {
+    OrderBookTest test;
+    test.run_timestamp_test();
+}
+
+void order_timestamp_test() {
+    OrderBookTest test;
+    test.run_order_timestamp_test();
 }

@@ -13,6 +13,7 @@ Invariants:
 
 #include <string>
 #include <cstdint>
+#include "utils/TimeUtils.hpp"
 
 namespace MatchEngine {
 
@@ -22,7 +23,7 @@ struct TradeEvent{
     std::string sell_order_id;
     double price;
     uint64_t quantity;
-    uint64_t timestamp;
+    const TimeUtils::Timestamp timestamp_ns;
 
     double maker_fee;
     double taker_fee;    

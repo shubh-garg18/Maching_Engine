@@ -47,8 +47,6 @@ bool OrderBook::cancel_order(std::string order_id){
        PriceLevel* level=order->price_level;
        level->remove_order(order);
        
-       level->reduce_quantity(order->remaining_quantity());
-
     if(level->is_empty()){ 
         remove_price_level(order->side, level);        
     }

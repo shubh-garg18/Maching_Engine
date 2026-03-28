@@ -13,3 +13,5 @@ void fee_tier_test();
 void market_data_test();
 void trade_stream_test();
 void stop_loss_test();
+void timestamp_test();
+void order_timestamp_test();

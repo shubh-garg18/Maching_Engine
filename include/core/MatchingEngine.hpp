@@ -10,6 +10,7 @@ Invariants:
 #include "OrderBook.hpp"
 #include "FeeCalculator/FeeCalculator.hpp"
 #include "publisher/TradePublisher.hpp"
+#include "utils/TimeUtils.hpp"
 #include<string>
 #include<vector>
 #include<cstdint>
@@ -30,11 +31,22 @@ struct Trade{
     std::string sell_order_id;
     double price;
     uint64_t quantity;
-    uint64_t timestamp;
+    const TimeUtils::Timestamp engine_ts;
+    const TimeUtils::Timestamp wall_ts;
 
     //Fees
     double maker_fee;
     double taker_fee;
+
+    Trade(std::string uid, std::string buy_id,
+          std::string sell_id, double p, uint64_t qty,
+          TimeUtils::Timestamp eng_ts,
+          TimeUtils::Timestamp wall_ts_, 
+          double maker, double taker)
+        : user_id(std::move(uid)), buy_order_id(std::move(buy_id)),
+          sell_order_id(std::move(sell_id)), price(p), quantity(qty),
+          engine_ts(eng_ts), wall_ts(wall_ts_), maker_fee(maker),
+          taker_fee(taker) {}
 };
 
 struct MatchingEngine{
@@ -52,7 +64,7 @@ struct MatchingEngine{
         trade_publisher=p;
     }
 
-    uint64_t last_timestamp=0;
+    TimeUtils::Timestamp last_timestamp=0;
     explicit MatchingEngine(OrderBook& book, FeeCalculator& fee_calculator);
 
     // Matching Loop

@@ -11,22 +11,24 @@ MatchingEngine::MatchingEngine(OrderBook& book, FeeCalculator& fee_calculator)
 
 //Generate Trade with fees
 Trade MatchingEngine::generate_trades(uint64_t trade_qty, Order* incoming, Order* resting){
-    Trade t;
-    t.user_id=incoming->user_id;
-    t.quantity=trade_qty;
-    t.price=resting->price;
-    t.timestamp=incoming->timestamp;
+    TimeUtils::Timestamp eng_ts = TimeUtils::now_ns();
+    TimeUtils::Timestamp wall_ts = TimeUtils::wall_time_ns();
+
+    double price=resting->price;
+    std::string buy_id;
+    std::string sell_id;
+
     if(incoming->side==Side::BUY){
-        t.buy_order_id=incoming->order_id;
-        t.sell_order_id=resting->order_id;
+        buy_id=incoming->order_id;
+        sell_id=resting->order_id;
     }
     else{
-        t.buy_order_id=resting->order_id;
-        t.sell_order_id=incoming->order_id;
+        buy_id=resting->order_id;
+        sell_id=incoming->order_id;
     }
 
     // Fees
-    double notional=t.price*(double)trade_qty;
+    double notional=price*static_cast<double>(trade_qty);
 
     //MAKER=Resting, TAKER=Incoming
     if(incoming->user_id!=resting->user_id){
@@ -34,12 +36,25 @@ Trade MatchingEngine::generate_trades(uint64_t trade_qty, Order* incoming, Order
         fees_calculator.update_volume(incoming->order_id, notional);        
     }
 
-    t.maker_fee=fees_calculator.maker_fee(resting->order_id, t.price, trade_qty);
-    t.taker_fee=fees_calculator.taker_fee(incoming->order_id,t.price, trade_qty);
+    double maker_fee=fees_calculator.maker_fee(resting->order_id, price, trade_qty);
+    double taker_fee=fees_calculator.taker_fee(incoming->order_id,price, trade_qty);
 
-    assert(t.taker_fee >= 0);
-    assert(!std::isnan(t.maker_fee));
-    assert(!std::isnan(t.taker_fee));
+    assert(taker_fee >= 0);
+    assert(!std::isnan(maker_fee));
+    assert(!std::isnan(taker_fee));
+
+    //Generate Trade
+    Trade t(
+        incoming->user_id,
+        std::move(buy_id),
+        std::move(sell_id),
+        price,
+        trade_qty,
+        eng_ts,
+        wall_ts,
+        maker_fee,
+        taker_fee
+    );
 
     //Publish Trade by TradePublisher
     if(trade_publisher){
@@ -49,7 +64,7 @@ Trade MatchingEngine::generate_trades(uint64_t trade_qty, Order* incoming, Order
             t.sell_order_id,
             t.price,
             t.quantity,
-            t.timestamp,
+            t.engine_ts,
             t.maker_fee,
             t.taker_fee
         };
@@ -115,15 +130,11 @@ void MatchingEngine::matching_loop(Order* order){
         assert(t.price == resting->price);
 
         if(resting->is_filled()){
-            resting->status=OrderStatus::COMPLETED;
             level->remove_order(resting);
             if(level->is_empty()){
                 order_book.remove_price_level(resting->side, level);
                 level=nullptr;
             }
-        }
-        else{
-            resting->status=OrderStatus::PARTIALLY_FILLED;
         }
     }
     if(any_trade) check_stop_orders();

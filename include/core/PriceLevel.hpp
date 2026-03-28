@@ -64,6 +64,8 @@ struct PriceLevel{
         assert(order);
         assert(order->price_level==this);
 
+        total_quantity-=order->remaining_quantity();
+
         if(order->prev) order->prev->next=order->next;
         else head=order->next;
 
