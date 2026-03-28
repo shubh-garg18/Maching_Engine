@@ -246,12 +246,6 @@ Optimizations intentionally deferred to preserve correctness:
 
 ---
 
-## License
-
-[Add your license here]
-
----
-
 ## Author
 
-[Add your details here]
+[Shubh Garg](https://github.com/shubh-garg18)

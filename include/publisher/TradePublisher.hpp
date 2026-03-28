@@ -11,6 +11,14 @@ struct TradePublisher{
     virtual void publish(const TradeEvent& trade)=0;
 };
 
+struct InMemoryTradePublisher: public TradePublisher{
+    std::vector<TradeEvent> events;
+
+    void publish(const TradeEvent& trade) override{
+        events.push_back(trade);
+    }
+};
+
 }
 
 

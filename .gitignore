@@ -1,3 +1,4 @@
 # build artifacts
 test_engine
 .vscode/
+build/

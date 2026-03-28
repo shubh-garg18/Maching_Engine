@@ -4,7 +4,7 @@
 #include "FeeCalculator/FeeCalculator.hpp"
 #include "io/PrintBBO.hpp"
 #include "io/PrintL2Snapshot.hpp"
-#include "../publisher/TradePublisher.cpp"
+#include "publisher/TradePublisher.hpp"
 
 #include <iostream>
 #include <cassert>
