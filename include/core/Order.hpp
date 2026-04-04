@@ -34,7 +34,7 @@ struct Order{
     Order* next=nullptr;
     Order* prev=nullptr;
     PriceLevel* price_level=nullptr;
-    const TimeUtils::Timestamp timestamp_ns;
+    TimeUtils::Timestamp timestamp_ns=0;
     const TimeUtils::Timestamp wall_timestamp_ns;
     OrderStatus status=OrderStatus::CREATED;
 
@@ -90,7 +90,6 @@ struct Order{
         if(remaining_quantity()==0) status=OrderStatus::COMPLETED;
         else status=OrderStatus::PARTIALLY_FILLED;
     }
-
 
     bool is_filled() const{
         return remaining_quantity()==0;

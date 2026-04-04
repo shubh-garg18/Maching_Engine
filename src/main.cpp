@@ -16,6 +16,7 @@ int main() {
     stop_loss_test();
     timestamp_test();
     order_timestamp_test();
+    event_queue_engine_test();
 
     std::cout << "All tests passed" << std::endl;
 
@@ -23,9 +24,8 @@ int main() {
 }
 
 /*
-
-g++ -std=c++20 -g -Wall -Wextra -Wshadow -Wconversion -Wpedantic \
--Iinclude \
-$(find src -name '*.cpp') \
--o test_engine
+rm -rf build
+mkdir build && cd build
+cmake ..
+make
 */

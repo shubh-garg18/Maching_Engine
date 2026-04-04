@@ -5,6 +5,7 @@
 #include "io/PrintBBO.hpp"
 #include "io/PrintL2Snapshot.hpp"
 #include "publisher/TradePublisher.hpp"
+#include "core/EventQueue.hpp"
 
 #include <iostream>
 #include <cassert>
@@ -36,12 +37,23 @@ public:
     void run_stop_loss_test();
     void run_timestamp_test();
     void run_order_timestamp_test();
+    void run_event_queue_engine_test();
+    void wait_for_trades(size_t expected);
 
 private:
     OrderBook book;
     MatchingEngine engine;
     FeeCalculator fee_calculator;
+    InMemoryTradePublisher publisher;
+    EventQueue queue;
 };
+
+// Helper function
+void OrderBookTest::wait_for_trades(size_t expected){
+    while(publisher.events.size() < expected){
+        std::this_thread::yield();
+    }    
+}
 
 // ------------------ TEST 1 ------------------
 
@@ -486,7 +498,6 @@ void OrderBookTest::run_market_data_test() {
 void OrderBookTest::run_trade_stream_test() {
     std::cout << "=== TRADE STREAM TEST ===\n";
 
-    InMemoryTradePublisher publisher;
     engine.set_trade_publisher(&publisher);
 
     Order s1("S1", Side::SELL, OrderType::LIMIT, 100.0, 5, 1);
@@ -657,6 +668,52 @@ void OrderBookTest::run_order_timestamp_test() {
     std::cout << "✔ FIFO timestamp ordering works\n\n\n\n";
 }
 
+// ---------------- EVENT QUEUE ENGINE TEST ---------------
+
+void OrderBookTest::run_event_queue_engine_test() {
+    std::cout << "=== EVENT QUEUE ENGINE TEST ===\n";
+    
+    engine.set_trade_publisher(&publisher);
+
+    // Start engine thread
+    std::thread engine_thread([&](){
+        engine.run(queue);
+    });
+
+    Order o1("O1", Side::SELL, OrderType::LIMIT, 100.0, 5, TimeUtils::now_ns());
+    Order o2("O2", Side::SELL, OrderType::LIMIT, 100.0, 5, TimeUtils::now_ns());
+
+    queue.push(EngineEvent::New(&o1));
+    queue.push(EngineEvent::New(&o2));
+
+    Order b1("B1", Side::BUY, OrderType::MARKET, 6, TimeUtils::now_ns());
+    queue.push(EngineEvent::New(&b1));
+
+    wait_for_trades(2);
+
+    assert(o1.is_filled());
+    assert(o2.remaining_quantity() == 4);
+    assert(b1.filled_quantity == 6);
+    assert(publisher.events.size() == 2);
+    
+    std::cout<< "Trades:\n";
+    for(auto &t: publisher.events){
+        std::cout << t.buy_order_id << " "
+                  << t.sell_order_id << " "
+                  << t.price << " "
+                  << t.quantity << " "
+                  << t.engine_ts << " "
+                  << TimeUtils::to_iso8601(t.wall_ts) << "\n";
+
+
+                  
+    }
+    std::cout<<"✔ Event queue matching works\n\n\n\n";
+    queue.push(EngineEvent::Stop());
+    engine_thread.join();
+}
+
+
 
 // ------------------ PUBLIC ENTRY POINTS ------------------
 
@@ -733,4 +790,9 @@ void timestamp_test() {
 void order_timestamp_test() {
     OrderBookTest test;
     test.run_order_timestamp_test();
+}
+
+void event_queue_engine_test() {
+    OrderBookTest test;
+    test.run_event_queue_engine_test();
 }

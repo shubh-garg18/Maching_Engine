@@ -11,6 +11,7 @@ Invariants:
 #include "FeeCalculator/FeeCalculator.hpp"
 #include "publisher/TradePublisher.hpp"
 #include "utils/TimeUtils.hpp"
+#include "EventQueue.hpp"
 #include<string>
 #include<vector>
 #include<cstdint>
@@ -64,8 +65,17 @@ struct MatchingEngine{
         trade_publisher=p;
     }
 
+    bool running=false;//Initially Matching Engine is not running
+
+    // Last timestamp
     TimeUtils::Timestamp last_timestamp=0;
+
+    // Constructor
     explicit MatchingEngine(OrderBook& book, FeeCalculator& fee_calculator);
+
+    // Run check
+    void run(EventQueue& queue);
+    void process_event(const EngineEvent& event);
 
     // Matching Loop
     void matching_loop(Order* order);

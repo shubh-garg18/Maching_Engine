@@ -15,3 +15,4 @@ void trade_stream_test();
 void stop_loss_test();
 void timestamp_test();
 void order_timestamp_test();
+void event_queue_engine_test();

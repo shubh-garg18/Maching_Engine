@@ -26,7 +26,12 @@ enum class OrderStatus:uint8_t{
     COMPLETED,
     CANCELLED
 };
-    
+ 
+enum class EventType{
+    NEW_ORDER,
+    CANCEL_ORDER,
+    STOP
+};
 }// namespace MatchEngine
 
 

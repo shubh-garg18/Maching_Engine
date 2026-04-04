@@ -23,7 +23,8 @@ struct TradeEvent{
     std::string sell_order_id;
     double price;
     uint64_t quantity;
-    const TimeUtils::Timestamp timestamp_ns;
+    TimeUtils::Timestamp engine_ts;
+    TimeUtils::Timestamp wall_ts;
 
     double maker_fee;
     double taker_fee;    

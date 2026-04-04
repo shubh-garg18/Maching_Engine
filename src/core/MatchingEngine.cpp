@@ -65,6 +65,7 @@ Trade MatchingEngine::generate_trades(uint64_t trade_qty, Order* incoming, Order
             t.price,
             t.quantity,
             t.engine_ts,
+            t.wall_ts,
             t.maker_fee,
             t.taker_fee
         };
@@ -77,6 +78,7 @@ Trade MatchingEngine::generate_trades(uint64_t trade_qty, Order* incoming, Order
 // Order type dispatcher
 void MatchingEngine::process_order(Order* order){
     assert(order->status==OrderStatus::CREATED);
+    if (order->timestamp_ns == 0) order->timestamp_ns = TimeUtils::now_ns();
     switch(order->type){
         case OrderType::LIMIT: 
             process_limit_order(order); 
@@ -93,6 +95,36 @@ void MatchingEngine::process_order(Order* order){
         case OrderType::STOP_LOSS:
         case OrderType::STOP_LIMIT:
             process_stop_order(order);
+            break;
+    }
+}
+
+// Run check
+void MatchingEngine::run(EventQueue& queue) {
+    running=true;
+
+    while(running) {
+        EngineEvent event;
+        queue.pop(event);
+
+        process_event(event);
+    }
+}
+
+// Process event via EventType
+void MatchingEngine::process_event(const EngineEvent& event) {
+    switch(event.type) {
+        case EventType::NEW_ORDER: {
+            Order* order = event.order;
+            order->timestamp_ns = TimeUtils::now_ns();
+            process_order(order);
+            break;
+        }
+        case EventType::CANCEL_ORDER:
+            order_book.cancel_order(event.order_id);
+            break;
+        case EventType::STOP:
+            running=false;
             break;
     }
 }
