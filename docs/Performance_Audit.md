@@ -1,272 +1,182 @@
-# Matching Engine Performance & Complexity Audit
+# Performance Audit
 
 ## Overview
 
-This document analyzes the computational complexity, memory behavior, and scalability characteristics of the matching engine core.
+This document covers the time complexity, memory behavior, and hot path characteristics of the matching engine core. It does not cover I/O or persistence layers.
 
-The goal of this audit is to:
-
+Goals:
 - Prove correctness of performance assumptions
-- Identify hot paths and bottlenecks
-- Establish guarantees for latency-sensitive environments
-- Provide a foundation for future optimization work
-
-This analysis focuses on the **engine core**, not I/O or persistence layers.
+- Identify hot paths and known bottlenecks
+- Establish a baseline for future optimization work
 
 ---
 
-## C.1 Time Complexity (Per Operation)
+## C.1 Time Complexity
 
-### 1. Limit Order Insertion (Non-Crossing)
+### Limit Order Insertion (non-crossing)
 
-#### Execution Path
+**Path:** `process_limit_order → matching_loop (0 iterations) → insert_limit`
 
-process_limit_order
-→ matching_loop (0 iterations)
-→ insert_limit
+| Step                              | Cost     |
+| --------------------------------- | -------- |
+| `std::map` price level lookup     | O(log P) |
+| FIFO append within level          | O(1)     |
+| BBO pointer refresh               | O(log P) |
 
-#### Cost Breakdown
-
-- `std::map` price level lookup/insert: **O(log P)**
-- FIFO append within level: **O(1)**
-
-#### Total Complexity
-
-O(log P)
-
-Where:
-
-- `P` = Number of active price levels (NOT number of orders)
-
-#### Analysis
-
-This is the optimal complexity for an ordered limit order book.
+**Total: O(log P)** — where P is the number of active price levels, not the number of orders.
 
 ---
 
-### 2. Matching Loop (Aggressive Orders)
+### Matching Loop (aggressive orders)
 
-#### Execution Path for Matching
+**Path:** `matching_loop → iterate crossed levels → consume FIFO orders`
 
-matching_loop
-→ iterate crossed price levels
-→ consume FIFO orders within each level
+Let L = crossed price levels, K = resting orders consumed.
 
-Let:
+| Step                         | Cost |
+| ---------------------------- | ---- |
+| Per-level cross check        | O(L) |
+| Per-order fill and FIFO pop  | O(K) |
+| BBO pointer refresh per fill | O(log P) amortized per level removal |
 
-- `L` = Number of crossed price levels
-- `K` = Number of resting orders consumed
+**Total: O(L + K)** — theoretical lower bound for price-time priority matching.
 
-#### Cost
-
-O(L + K)
-
-#### Key Properties
-
+Key properties:
 - No scanning of irrelevant levels
-- FIFO removal is O(1)
+- FIFO removal is O(1) via intrusive linked list
 - No heap allocation inside the matching loop
 
-#### Analysis of Matching Loop
+---
 
-This is the theoretical lower bound for a price-time priority matching engine.
+### Order Type Summary
+
+| Type   | Extra cost       | Total      |
+| ------ | ---------------- | ---------- |
+| MARKET | none             | O(L + K)   |
+| IOC    | none             | O(L + K)   |
+| FOK    | pre-scan + match | O(L + K)   |
+
+FOK performs a full liquidity pre-check before matching, resulting in roughly 2× traversal, but stays linear. This avoids rollback complexity entirely.
 
 ---
 
-### 3. Market / IOC / FOK Orders
+### Cancel Order
 
-| Order Type | Extra Cost       | Total Complexity |
-| ---------- | ---------------- | ---------------- |
-| MARKET     | None             | O(L + K)         |
-| IOC        | None             | O(L + K)         |
-| FOK        | Pre-scan + match | O(L + K)         |
+**Path:** `unordered_map lookup → intrusive unlink → price level cleanup`
 
-#### Note on FOK Orders
+| Step                     | Cost     |
+| ------------------------ | -------- |
+| Hash map lookup          | O(1)     |
+| Intrusive list unlink    | O(1)     |
+| Level removal if empty   | O(log P) |
+| BBO pointer refresh      | O(log P) |
 
-FOK performs a full liquidity pre-check, resulting in approximately 2× traversal, but remains linear.
-
-This design avoids rollback complexity and is standard in production engines.
-
----
-
-### 4. Cancel Order
-
-#### Execution Path for Cancel
-
-unordered_map lookup
-→ FIFO unlink
-→ price level cleanup
-
-#### Complexity of Cancel
-
-O(1)
-
-#### Analysis of Cancel Operation
-
-Constant-time cancellation is achieved via order ID indexing.
+**Total: O(1)** for the common case (level not emptied). O(log P) when the cancel empties a price level.
 
 ---
 
-### 5. Best Bid / Offer (BBO)
+### BBO (Best Bid/Offer)
 
-#### Operation
+**Read:** O(1) — cached `best_bid` / `best_ask` pointers returned directly.
 
-return best_bid / best_ask
-
-#### Complexity of BBO
-
-O(1)
+**Write:** O(log P) — pointers are refreshed via `prev(bids.end())` and `asks.begin()` on every structural operation: insert, cancel, and fill-driven level removal. The O(1) read guarantee holds only because writes pay the log P cost eagerly.
 
 ---
 
-### 6. L2 Snapshot (Depth = D)
+### L2 Snapshot
 
-#### Complexity of L2 Snapshot
+**Total: O(D)** — where D is the requested depth. Iterates bids in descending order and asks in ascending order up to D levels each.
 
-O(D)
+---
 
-Where:
+### Stop Order Trigger Scan
 
-- `D` = Requested depth
+After every fill, `check_stop_orders` scans `pending_stops` linearly.
+
+| Step                                         | Cost |
+| -------------------------------------------- | ---- |
+| Scan all pending stops                       | O(S) |
+| Erase triggered entries from vector          | O(S) per triggered order |
+| Execute triggered order (MARKET or LIMIT)    | O(L + K) per order |
+
+**Total per fill: O(S + T × (L + K))** — where S = pending stop count, T = triggered stops.
+
+This is the primary scalability concern at high stop-order counts. A sorted index keyed on `stop_price` would reduce per-fill scan to O(log S + T).
 
 ---
 
 ## C.2 Hot Path Walk-Through
 
-The most frequently executed path is:
+The most frequently executed path:
 
-matching_loop →
-get_best_opposite →
-cross check →
-head order retrieval →
-fill execution →
-removal if fully filled
+```
+matching_loop
+  └─ get_best_opposite       ← cached pointer, O(1)
+  └─ cross check             ← single comparison
+  └─ level->get_head_order   ← intrusive list head, O(1)
+  └─ fill_quantity (×2)      ← integer subtract + status update
+  └─ level->reduce_quantity  ← integer subtract
+  └─ generate_trades         ← fee lookup + vector append
+  └─ level->remove_order     ← intrusive unlink, O(1)
+  └─ remove_price_level      ← map erase + BBO refresh, O(log P) if level emptied
+```
 
-### Memory Access Pattern
+**Memory access pattern:** PriceLevel pointers are stable. FIFO list traversal within a level is sequential. No vector growth inside the loop. Trade append is amortized O(1).
 
-- PriceLevel pointers remain stable
-- FIFO list traversal is sequential (cache-friendly)
-- No vector growth inside matching loop
-- Trade append is amortized O(1)
-
-#### Hot Path Conclusion
-
-The matching loop is designed for strong cache locality and minimal branching.
+The loop is designed for strong cache locality and minimal branching on the critical path.
 
 ---
 
 ## C.3 Hidden Costs & Edge Cases
 
-### 1. `std::map` vs `unordered_map` for Price Levels
+### `std::map` for price levels
 
-Current structure:
+Tree-based pointer chasing hurts cache locality. Every `begin()` / `prev(end())` call after a structural operation walks the red-black tree. Acceptable at current scale; likely the first bottleneck at very high throughput.
 
-std::map<double, PriceLevel*>
+**Planned fix:** replace with a cache-friendly flat structure and a hash index for non-best-price lookups.
 
-#### Advantages
+### `double` price keys
 
-- Maintains sorted price ordering
-- Enables efficient best price retrieval
+Floating-point precision drift can cause comparison instability — two logically equal prices hashing to different map keys. Acceptable for simulation. Production systems should use fixed-point integer ticks (`int64_t`).
 
-#### Disadvantages
+### FOK pre-scan
 
-- Tree-based pointer chasing
-- Reduced cache locality
+Intentional 2× traversal. The alternative — match then roll back on failure — introduces state mutation risk and higher implementation complexity. Current approach is correct and simple.
 
-#### Assessment of Price Level Storage
+### `pending_stops` as a vector
 
-Acceptable for current scale. Likely first scalability bottleneck at very high throughput.
+Linear scan and erase. Correct for small S; degrades at scale. Also, `MatchingEngine` accesses `OrderBook::pending_stops` directly — a coupling that should be encapsulated behind a `StopOrderManager` interface.
 
----
+### Unbounded `engine.trades` vector
 
-### 2. Double-Based Price Keys
-
-Potential issues:
-
-- Floating-point precision drift
-- Comparison instability
-
-#### Assessment of Double Keys
-
-Acceptable for simulation.
-
-#### Production Recommendation for Pricing
-
-Use fixed-point integer ticks (`int64_t`).
-
----
-
-### 3. FOK Pre-Scan
-
-FOK performs duplicate traversal intentionally.
-
-Alternative rollback-based designs introduce:
-
-- Higher complexity
-- State mutation risk
-
-Current approach is correct and safe.
-
----
-
-### 4. Trade Vector Growth
-
-std::vector\<Trade\> trades
-
-Potential issue:
-
-- Unbounded memory growth during long sessions
-
-#### Future Production Approach for Trades
-
-- Stream trades externally
-- Persist and truncate in memory
+Grows without bound during long sessions. Production systems should stream trades externally via `TradePublisher` and use a ring buffer with a configurable cap in memory.
 
 ---
 
 ## C.4 Performance-Critical Invariants
 
-The following invariants guarantee engine efficiency:
+The following must hold for the engine to meet its complexity guarantees:
 
-- No empty price levels
-- FIFO ordering via intrusive pointers
-- No rebalancing during matching
-- No allocations inside `matching_loop`
-- No book mutation on FOK failure
-- Market data structures are read-only during matching
+- No empty price levels retained after fill or cancel
+- FIFO order enforced via intrusive linked list within each level
+- No heap allocation inside `matching_loop`
+- No book mutation on FOK failure (pre-scan only)
+- BBO pointers refreshed on every structural operation
+- `pending_stops` scan happens only after a fill, never inside `matching_loop`
 
-These constraints minimize latency variance.
-
----
-
-## C.5 Complexity Summary Table
-
-| Operation          | Complexity |
-| ------------------ | ---------- |
-| Limit Insert       | O(log P)   |
-| Market / IOC Match | O(L + K)   |
-| FOK                | O(L + K)   |
-| Cancel             | O(1)       |
-| BBO                | O(1)       |
-| L2 Snapshot        | O(D)       |
-
-Where:
-
-- `P` = Number of price levels
-- `L` = Crossed levels
-- `K` = Matched resting orders
-- `D` = Requested depth
+Breaking any of these invalidates the complexity claims above.
 
 ---
 
-## Future Optimization Opportunities
+## C.5 Summary Table
 
-(Not implemented yet to preserve correctness and simplicity)
-
-- Replace `std::map` with cache-friendly structure
-- Introduce memory pooling for orders
-- Convert floating price representation to integer ticks
-- Stream trades instead of storing indefinitely
-- Cache best bid/ask iterators
-
-These are intentionally deferred until empirical benchmarking is completed.
+| Operation          | Complexity          | Notes                                  |
+| ------------------ | ------------------- | -------------------------------------- |
+| Limit insert       | O(log P)            | P = active price levels                |
+| Market / IOC match | O(L + K)            | L = levels crossed, K = fills          |
+| FOK                | O(L + K)            | ~2× traversal, no rollback             |
+| Cancel             | O(1) / O(log P)     | O(log P) only if level emptied         |
+| BBO read           | O(1)                | Cached pointer                         |
+| BBO write          | O(log P)            | Paid on every structural op            |
+| L2 snapshot        | O(D)                | D = requested depth                    |
+| Stop trigger scan  | O(S + T × (L + K)) | S = pending stops, T = triggered       |

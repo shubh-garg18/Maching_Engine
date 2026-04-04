@@ -31,6 +31,7 @@ set(WARNING_FLAGS
 add_library(core
     src/core/MatchingEngine.cpp
     src/core/OrderBook.cpp
+    src/core/EventQueue.cpp
 )
 
 target_include_directories(core PUBLIC include)
