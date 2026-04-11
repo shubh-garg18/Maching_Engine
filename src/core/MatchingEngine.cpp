@@ -248,16 +248,23 @@ void MatchingEngine::process_fok_order(Order* order){
 }
 
 // Pre Scan loop
+// Iterates the sorted map directly — PriceLevel::next is never maintained.
 bool OrderBook::can_fully_fill(const Order* order) const{
-    uint64_t required_qty=order->original_quantity;
-    Side side=order->side;
-    const PriceLevel* level=get_best_opposite(side);
-    while(level and required_qty){
-        if(!MatchingEngine::cross(order, level)) break;
-        required_qty-=std::min<uint64_t>(required_qty, level->total_quantity);
-        level=level->next;
+    uint64_t required_qty = order->original_quantity;
+
+    if (order->side == Side::BUY) {
+        for (auto it = asks.begin(); it != asks.end() && required_qty > 0; ++it) {
+            if (!MatchingEngine::cross(order, it->second)) break;
+            required_qty -= std::min<uint64_t>(required_qty, it->second->total_quantity);
+        }
+    } else {
+        for (auto it = bids.rbegin(); it != bids.rend() && required_qty > 0; ++it) {
+            if (!MatchingEngine::cross(order, it->second)) break;
+            required_qty -= std::min<uint64_t>(required_qty, it->second->total_quantity);
+        }
     }
-    return required_qty==0;
+
+    return required_qty == 0;
 }
 
 // Helper function to check if price Level crosses

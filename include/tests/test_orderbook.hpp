@@ -36,6 +36,7 @@ public:
     void run_timestamp_test();
     void run_order_timestamp_test();
     void run_event_queue_engine_test();
+    void run_combined_test();
 
 private:
     MatchEngine::FeeCalculator          fee_calculator;  // must precede engine
@@ -64,4 +65,5 @@ inline void run_all_tests() {
     OrderBookTest{}.run_timestamp_test();
     OrderBookTest{}.run_order_timestamp_test();
     OrderBookTest{}.run_event_queue_engine_test();
+    OrderBookTest{}.run_combined_test();
 }
