@@ -79,7 +79,7 @@ FOK performs a full liquidity pre-check before matching, resulting in roughly 2�
 
 **Read:** O(1) — cached `best_bid` / `best_ask` pointers returned directly.
 
-**Write:** O(log P) — pointers are refreshed via `prev(bids.end())` and `asks.begin()` on every structural operation: insert, cancel, and fill-driven level removal. The O(1) read guarantee holds only because writes pay the log P cost eagerly.
+**Write:** O(log P) — pointers are refreshed via `prev(bids.end())` and `asks.begin()` on every level add/remove: insert, and fill- or cancel-driven level removal (a cancel that leaves its level non-empty pays no refresh). The O(1) read guarantee holds only because writes pay the log P cost eagerly.
 
 ---
 
@@ -91,7 +91,7 @@ FOK performs a full liquidity pre-check before matching, resulting in roughly 2�
 
 ### Stop Order Trigger Scan
 
-After every fill, `check_stop_orders` scans `pending_stops` linearly.
+After each matching pass completes (once, and only when at least one fill occurred), `check_stop_orders` scans `pending_stops` linearly.
 
 | Step                                         | Cost |
 | -------------------------------------------- | ---- |
@@ -99,9 +99,9 @@ After every fill, `check_stop_orders` scans `pending_stops` linearly.
 | Erase triggered entries from vector          | O(S) per triggered order |
 | Execute triggered order (MARKET or LIMIT)    | O(L + K) per order |
 
-**Total per fill: O(S + T × (L + K))** — where S = pending stop count, T = triggered stops.
+**Total per matching pass: O(S + T × (L + K))** — where S = pending stop count, T = triggered stops.
 
-This is the primary scalability concern at high stop-order counts. A sorted index keyed on `stop_price` would reduce per-fill scan to O(log S + T).
+This is the primary scalability concern at high stop-order counts. A sorted index keyed on `stop_price` would reduce the per-pass scan to O(log S + T).
 
 ---
 
@@ -162,7 +162,7 @@ The following must hold for the engine to meet its complexity guarantees:
 - No unbounded heap allocation inside `matching_loop` (trade append is amortized O(1))
 - No book mutation on FOK failure (pre-scan only)
 - BBO pointers refreshed on every structural operation
-- `pending_stops` scan happens only after a fill, never inside `matching_loop`
+- `pending_stops` scan happens once after the fill loop completes, never inside the per-fill `while` loop
 
 Breaking any of these invalidates the complexity claims above.
 
@@ -177,9 +177,9 @@ Breaking any of these invalidates the complexity claims above.
 | FOK                | O(L + K)            | ~2× traversal, no rollback             |
 | Cancel             | O(1) / O(log P)     | O(log P) only if level emptied         |
 | BBO read           | O(1)                | Cached pointer                         |
-| BBO write          | O(log P)            | Paid on every structural op            |
+| BBO write          | O(log P)            | Paid on insert and level removal       |
 | L2 snapshot        | O(D)                | D = requested depth                    |
-| Stop trigger scan  | O(S + T × (L + K)) | S = pending stops, T = triggered       |
+| Stop trigger scan  | O(S + T × (L + K)) | Per pass; S = pending, T = triggered   |
 
 ---
 

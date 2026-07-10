@@ -20,7 +20,7 @@ The engine is built around a single `OrderBook` owned by a `MatchingEngine`. All
 ┌─────────────────────────────────────────────────────────────┐
 │                      MatchingEngine                         │
 │  process_order → matching_loop → generate_trades           │
-│  check_stop_orders (after every fill)                      │
+│  check_stop_orders (once per matching pass)                │
 └───────┬──────────────────┬───────────────────┬──────────────┘
         │ owns ref to      │ owns ref to       │ publishes to
         ▼                  ▼                   ▼
@@ -43,7 +43,7 @@ Central orchestrator. Owns references to `OrderBook` and `FeeCalculator`. Respon
 
 - Dispatches incoming orders to the correct handler
 - Runs the shared `matching_loop` (price-time priority)
-- Calls `check_stop_orders` after every fill
+- Calls `check_stop_orders` once per matching pass (after the fill loop, when a trade occurred)
 - Generates `Trade` records with maker/taker fees
 - Publishes `TradeEvent` to the registered `TradePublisher`
 
@@ -55,7 +55,7 @@ Owns all resting state. Two sorted price maps (`std::map<double, PriceLevel*>`) 
 
 Also holds `pending_stops` — a `vector<Order*>` of untriggered stop orders. This is a known coupling; `MatchingEngine` scans and mutates it directly after each fill. A dedicated `StopOrderManager` is the planned clean-up.
 
-Cached `best_bid` and `best_ask` pointers are updated on every structural operation (insert, cancel, fill-driven removal). BBO reads are O(1); the pointer refresh is O(log P).
+Cached `best_bid` and `best_ask` pointers are refreshed whenever a price level is added or removed (insert, and fill- or cancel-driven level removal). A cancel that leaves its level non-empty needs no refresh. BBO reads are O(1); the pointer refresh is O(log P).
 
 ### EventQueue
 
@@ -121,7 +121,7 @@ FOK pre-scans the book to verify fillability before touching any state. The alte
 
 ### Stop trigger scan is O(S)
 
-After every fill, `check_stop_orders` iterates all pending stops linearly. This is correct and simple, but degrades as S grows. A sorted index keyed on `stop_price` would reduce per-fill trigger evaluation to O(log S + T) where T is the number of triggered orders.
+After each matching pass (once the fill loop finishes, and only if a trade occurred), `check_stop_orders` iterates all pending stops linearly. This is correct and simple, but degrades as S grows. A sorted index keyed on `stop_price` would reduce per-pass trigger evaluation to O(log S + T) where T is the number of triggered orders.
 
 ### Storing all trades in `engine.trades`
 

@@ -14,6 +14,63 @@ A low-latency, price-time priority matching engine built in C++ for limit order 
 
 ---
 
+## Architecture at a Glance
+
+```mermaid
+classDiagram
+    class MatchingEngine {
+        +process_order(Order*)
+        +matching_loop(Order*)
+        +check_stop_orders()
+        +run(EventQueue&)
+    }
+    class OrderBook {
+        +insert_limit(Order*)
+        +cancel_order(id) bool
+        +can_fully_fill(Order*) bool
+        +get_bbo() BBO
+    }
+    class PriceLevel {
+        +add_order(Order*)
+        +remove_order(Order*)
+    }
+    class Order
+    class FeeCalculator {
+        +maker_fee() double
+        +taker_fee() double
+        +update_volume()
+    }
+    class TradePublisher {
+        <<interface>>
+        +publish(TradeEvent)
+    }
+    class EventQueue {
+        +push(EngineEvent)
+        +pop(EngineEvent&) bool
+    }
+
+    MatchingEngine o-- OrderBook : matches on
+    MatchingEngine o-- FeeCalculator : prices fills
+    MatchingEngine ..> TradePublisher : publishes to
+    MatchingEngine ..> EventQueue : consumes
+    OrderBook *-- PriceLevel : owns
+    PriceLevel o-- Order : FIFO queue
+    OrderBook o-- Order : id index + pending stops
+```
+
+> Full UML set — detailed class, sequence, state, and flow diagrams — lives in [docs/uml.md](docs/uml.md).
+
+---
+
+## Documentation
+
+- [Architecture & Design Decisions](docs/Architecture.md)
+- [Order Types Reference](docs/OrderTypes.md)
+- [Performance Audit](docs/Performance_Audit.md)
+- [UML Diagrams](docs/uml.md)
+
+---
+
 ## Building
 
 ```bash
@@ -111,15 +168,7 @@ worker.join();
 | Cancel             | O(1) avg   | O(log P) if level emptied     |
 | BBO read           | O(1)       | Cached pointer                |
 | L2 snapshot        | O(D)       | D = requested depth           |
-| Stop trigger scan  | O(S)       | S = pending stops, per fill   |
-
----
-
-## Docs
-
-- [Architecture & Design Decisions](docs/Architecture.md)
-- [Order Types Reference](docs/OrderTypes.md)
-- [Performance Audit](docs/Performance_Audit.md)
+| Stop trigger scan  | O(S)       | S = pending stops, per pass   |
 
 ---
 
